@@ -88,7 +88,7 @@ function receiveEvents(fhcEvent, sender, sendResponse) {
 
             case 555:
                 // console.log('Getting choices from datastore for field ' + fhcEvent.fieldName + ', search term: ' + fhcEvent.searchTerm);
-                getValuesMatchingSearchtermFromDatabaseAndRespond(fhcEvent.fieldName, fhcEvent.searchTerm, sendResponse);
+                getValuesMatchingSearchtermFromDatabaseAndRespond(fhcEvent.fieldName, fhcEvent.searchTerm, fhcEvent.host, sendResponse);
                 // Tell the browser we intend to use the sendResponse argument after the listener has returned
                 return true;
 
@@ -99,7 +99,7 @@ function receiveEvents(fhcEvent, sender, sendResponse) {
 
             case 888:
                 // console.log('Background script: options changed!');
-                if (fhcEvent.domainFilterChanged || fhcEvent.fieldFilterChanged || fhcEvent.retainTypeChanged || fhcEvent.overrideIncognitoChanged) {
+                if (fhcEvent.domainFilterChanged || fhcEvent.fieldFilterChanged || fhcEvent.retainTypeChanged || fhcEvent.overrideIncognitoChanged || fhcEvent.limitToSiteChanged) {
                     initFilterOptions();
                 }
                 if (fhcEvent.multilineThresholdsChanged) {
@@ -299,6 +299,19 @@ function doRetainFieldType(fhcEvent) {
     }
 }
 
+/**
+ * Fields without an id or name are saved under a name derived from their label or placeholder, prefixed with
+ * this marker (keep in sync with the content script). Such generic names are always bound to their website.
+ */
+const FALLBACK_NAME_PREFIX = 'label:';
+
+/**
+ * Whether saved values for this field name may only be used on the website they were entered on.
+ */
+function isLimitedToSite(fieldname) {
+    return (filterPrefs && filterPrefs.prefLimitToSite) || (!!fieldname && fieldname.startsWith(FALLBACK_NAME_PREFIX));
+}
+
 function blockedByFilter(fhcEvent) {
     if (fhcEvent.incognito && !OptionsUtil.doSaveInIncognitoMode(filterPrefs)) {
         //console.log('name:' + fhcEvent.name + ' is blocked in Incognito mode');
@@ -432,11 +445,14 @@ function getFormElementFromStoreAndNotify(fhcEvent) {
 function getTextFieldFromStoreAndNotify(fhcEvent) {
     let objStore = getObjectStore(DbConst.DB_STORE_TEXT, "readonly");
 
-    let found = {
+    // entries from the current website take precedence over entries from other websites
+    const limitToSite = isLimitedToSite(fhcEvent.name);
+    let foundSameHost = {
         value: null,
         used: 0,
         last: 0
     };
+    let foundAnyHost = Object.assign({}, foundSameHost);
 
     //console.log("Looking up textfield with name: " + fhcEvent.name);
 
@@ -454,27 +470,32 @@ function getTextFieldFromStoreAndNotify(fhcEvent) {
             // console.log("Named Entry [" + cursor.key + "] name:[" + fhcEntry.name + "] value:[" + fhcEntry.value + "] used:[" + fhcEntry.used + "] host:" + fhcEntry.host + "] type:[" + fhcEntry.type +
             //     "} KEY=[" + fhcEntry.fieldkey + "] first:[" + fhcEntry.first + "] last:[" + fhcEntry.last + "]");
 
-            // TODO If host matches also it should take precedence?
+            const sameHost = (fhcEntry.host === fhcEvent.host);
+            if (sameHost || !limitToSite) {
+                const candidates = sameHost ? [foundSameHost, foundAnyHost] : [foundAnyHost];
+                candidates.forEach(found => {
+                    switch (fhcEvent.action) {
+                        case "fillMostRecent":
+                            if (fhcEntry.last > found.last) {
+                                found.value = fhcEntry.value;
+                                found.last = fhcEntry.last;
+                            }
+                            break;
 
-            switch (fhcEvent.action) {
-                case "fillMostRecent":
-                    if (fhcEntry.last > found.last) {
-                        found.value = fhcEntry.value;
-                        found.last = fhcEntry.last;
+                        case "fillMostUsed":
+                            if (fhcEntry.used > found.used) {
+                                found.value = fhcEntry.value;
+                                found.used = fhcEntry.used;
+                            }
+                            break;
                     }
-                    break;
-
-                case "fillMostUsed":
-                    if (fhcEntry.used > found.used) {
-                        found.value = fhcEntry.value;
-                        found.used = fhcEntry.used;
-                    }
-                    break;
+                });
             }
             cursor.continue();
         }
         else {
             //console.log("No more named entries!");
+            const found = (foundSameHost.value) ? foundSameHost : foundAnyHost;
             if (found.value) {
                 // use a callback function instead? (or a promise, arrow function whatever...)
                 fhcEvent.action = "formfieldValueResponse";
@@ -489,10 +510,13 @@ function getTextFieldFromStoreAndNotify(fhcEvent) {
     };
 }
 
-function getValuesMatchingSearchtermFromDatabaseAndRespond(fieldname, searchterm, sendResponse) {
+function getValuesMatchingSearchtermFromDatabaseAndRespond(fieldname, searchterm, host, sendResponse) {
     let objStore = getObjectStore(DbConst.DB_STORE_TEXT, "readonly");
 
-    let fieldValues = [];
+    // values from the current website are listed first, the same value may be saved for multiple websites
+    const limitToSite = isLimitedToSite(fieldname);
+    let sameHostValues = new Set();
+    let otherHostValues = new Set();
     const term = searchterm.toLowerCase();
 
     // console.log("Looking up values for textfield with name: " + fieldname);
@@ -509,20 +533,18 @@ function getValuesMatchingSearchtermFromDatabaseAndRespond(fieldname, searchterm
         if (cursor) {
             const fhcEntry = cursor.value;
             const value = fhcEntry.value;
+            const sameHost = (fhcEntry.host === host);
 
-            if (value) {
-                if (searchterm) {
-                    if (~value.toLowerCase().indexOf(term)) {
-                        fieldValues.push(value);
-                    }
-                } else {
-                    fieldValues.push(value);
+            if (value && (sameHost || !limitToSite)) {
+                if (!searchterm || ~value.toLowerCase().indexOf(term)) {
+                    (sameHost ? sameHostValues : otherHostValues).add(value);
                 }
             }
 
             cursor.continue();
         }
         else {
+            const fieldValues = [...sameHostValues, ...[...otherHostValues].filter(value => !sameHostValues.has(value))];
             // console.log("Returning response with " + fieldValues.length + " items");
             sendResponse({choices: fieldValues});
         }
@@ -685,20 +707,34 @@ function saveOrUpdateTextInputField(fhcEvent) {
         let key = event.target.result;
         if (key) {
             //console.log("entry exist, updating value for key " + key);
-
-            // now get the complete record by key
-            let getReq = objStore.get(key);
-            getReq.onerror = function(/*event*/) {
-                console.error("Get (for update) failed for record-key " + key, this.error);
-            };
-            getReq.onsuccess = function(event) {
-                let fhcEntry = event.target.result;
-                _updateEntry(objStore, key, fhcEntry, fhcEvent);
+            _getAndUpdateEntry(objStore, key, fhcEvent);
+        } else if (fhcEvent.host) {
+            // entries saved before input fields were bound to a host have an empty host, claim it for this host
+            let legacyReq = index.getKey(getLookupKey(Object.assign({}, fhcEvent, {host: ""})));
+            legacyReq.onsuccess = function(event) {
+                let legacyKey = event.target.result;
+                if (legacyKey) {
+                    _getAndUpdateEntry(objStore, legacyKey, fhcEvent);
+                } else {
+                    _insertNewEntry(objStore, fhcEvent);
+                }
             };
         } else {
             //console.log("entry does not exist, adding...");
             _insertNewEntry(objStore, fhcEvent);
         }
+    };
+}
+
+function _getAndUpdateEntry(objStore, key, fhcEvent) {
+    // now get the complete record by key
+    let getReq = objStore.get(key);
+    getReq.onerror = function(/*event*/) {
+        console.error("Get (for update) failed for record-key " + key, this.error);
+    };
+    getReq.onsuccess = function(event) {
+        let fhcEntry = event.target.result;
+        _updateEntry(objStore, key, fhcEntry, fhcEvent);
     };
 }
 
@@ -772,6 +808,11 @@ function createNewMultilineEntry(currentEntry, lastStoredEntry) {
 function importIfNotExist(fhcEvent) {
     let objStore = getObjectStore(DbConst.DB_STORE_TEXT, "readwrite");
 
+    if ("input" === fhcEvent.type && "local.import" === fhcEvent.host) {
+        // exported entries without a host (saved before hosts were stored for input fields), keep them unbound
+        fhcEvent.host = "";
+    }
+
     // entry already exists? (index = host + type + name + value)
     let lookupKey = getLookupKey(fhcEvent);
 
@@ -797,7 +838,10 @@ function _updateEntry(objStore, key, fhcEntry, fhcEvent) {
     // multiline fields are updated while you type, so only update the used count for input fields
     if ("input" === fhcEvent.type) {
         fhcEntry.used++;
-        // XXX input -> host should be a 1 to many relation, update related hosts
+        // input fields are stored per host, keep the latest page the value was used on
+        fhcEntry.host = fhcEvent.host;
+        fhcEntry.uri = fhcEvent.url;
+        fhcEntry.pagetitle = fhcEvent.pagetitle;
     } else {
         // for multiline fields update value and other properties that may have changed
         fhcEntry.value = fhcEvent.value;
@@ -835,20 +879,9 @@ function _updateEntry(objStore, key, fhcEntry, fhcEvent) {
 
 function _insertNewEntry(objStore, fhcEvent) {
     let now = (new Date()).getTime();
-    let host;
-    let uri;
-    let pagetitle;
-
-    if ("input" === fhcEvent.type) {
-        // XXX input -> host should be a 1 to many relation, update related hosts
-        host = "";
-        uri = "";
-        pagetitle = "";
-    } else {
-        host = fhcEvent.host;
-        uri = fhcEvent.url;
-        pagetitle = fhcEvent.pagetitle;
-    }
+    let host = fhcEvent.host ? fhcEvent.host : "";
+    let uri = fhcEvent.url ? fhcEvent.url : "";
+    let pagetitle = fhcEvent.pagetitle ? fhcEvent.pagetitle : "";
 
     let first = (fhcEvent.first) ? fhcEvent.first : now;
     let last = (fhcEvent.last) ? fhcEvent.last : now;
@@ -942,20 +975,9 @@ function _insertNewFormElement(objStore, formElement) {
 
 
 function _importNewEntry(objStore, fhcEvent) {
-    let host;
-    let uri;
-    let pagetitle;
-
-    if ("input" === fhcEvent.type) {
-        // XXX input -> host should be a 1 to many relation, update related hosts
-        host = "";
-        uri = "";
-        pagetitle = "";
-    } else {
-        host = fhcEvent.host;
-        uri = fhcEvent.url;
-        pagetitle = fhcEvent.pagetitle;
-    }
+    let host = fhcEvent.host ? fhcEvent.host : "";
+    let uri = (host && fhcEvent.url) ? fhcEvent.url : "";
+    let pagetitle = fhcEvent.pagetitle ? fhcEvent.pagetitle : "";
 
     let fhcEntry = {
         fieldkey: getLookupKey(fhcEvent),
@@ -987,8 +1009,9 @@ function getLookupKey(fhcEvent) {
     let key = fhcEvent.type + "|" + fhcEvent.name;
 
     if ("input" === fhcEvent.type) {
-        // prepend with empty host, input values are universal and not bound to a host
-        key = "|" + key + "|" + fhcEvent.value;
+        // a value is stored once per host (legacy entries have an empty host)
+        const host = fhcEvent.host ? fhcEvent.host : "";
+        key = host + "|" + key + "|" + fhcEvent.value;
     } else {
         // bind multiline fields to a specific host
         // do not add the value but the lastUsed date, we want to store one or more versions per host

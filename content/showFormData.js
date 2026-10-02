@@ -39,7 +39,7 @@ function getCurrentFields(aDocument, aFields) {
 
     aDocument.querySelectorAll("input,textarea").forEach( (node) => {
         if (_isTextInputSubtype(node.type) && _isDisplayed(node)) {
-            let name = (node.name) ? node.name : ((node.id) ? node.id : "");
+            let name = _getFieldName(node);
             if (name) {
                 aFields.push({
                     name: name,
@@ -302,7 +302,7 @@ function _getFormInfoText(element, includeForm) {
  *         the name of the element, if no name then return its id
  */
 function _getElementNameOrId(element) {
-    return (element.name && element.name.length > 0) ? element.name : element.id;
+    return _getFieldName(element);
 }
 
 /**

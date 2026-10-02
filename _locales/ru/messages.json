@@ -487,6 +487,10 @@
     "message": "Сохранение истории форм в приватном просмотре",
     "description": "Options window, Save formhistory when running in a private browsing tab"
   },
+  "optionsLimitToSite": {
+    "message": "Использовать сохранённый текст только на сайте, где он был введён",
+    "description": "Options window, only use saved text on the website where it was entered"
+  },
   "optionsRetainFieldTypes": {
     "message": "Сохранять поля",
     "description": "Options window, Retain which type of field"

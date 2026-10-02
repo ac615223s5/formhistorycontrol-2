@@ -632,13 +632,17 @@ function storeModifiedEntries() {
 function setNewValuesToObjEntryData() {
     let value;
     let url = '';
+    let host;
     if (document.getElementById('typeSelect').value === 'input') {
        value = document.getElementById('value').value;
+       // url and host are not editable for input fields, keep the website the value belongs to
+       url = (objEntryData.type === 'input' && objEntryData.url) ? objEntryData.url : '';
+       host = (objEntryData.type === 'input' && objEntryData.host) ? objEntryData.host : '';
     } else {
         value = document.getElementById('multiline-value').value;
         url = document.getElementById('url').value;
+        host = (url) ? MiscUtil.getHostnameFromUrlString(url) : '';
     }
-    let host = (url) ? MiscUtil.getHostnameFromUrlString(url) : '';
     let used = (document.getElementById('used').value !== '') ? parseInt(document.getElementById('used').value) : undefined;
     let first = (document.getElementById('first').value !== '') ?  DateUtil.fromISOdateString(document.getElementById('first').value) : undefined;
     let last = (document.getElementById('last').value !== '') ?  DateUtil.fromISOdateString(document.getElementById('last').value) : undefined;

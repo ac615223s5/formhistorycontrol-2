@@ -487,6 +487,10 @@
     "message": "Formularhistorie speichern im Privater Surf Modus",
     "description": "Options window, Save formhistory when running in a private browsing tab"
   },
+  "optionsLimitToSite": {
+    "message": "Gespeicherten Text nur auf der Website verwenden, auf der er eingegeben wurde",
+    "description": "Options window, only use saved text on the website where it was entered"
+  },
   "optionsRetainFieldTypes": {
     "message": "Welche Feldtyp speichern",
     "description": "Options window, Retain which type of field"

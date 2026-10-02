@@ -79,6 +79,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     document.querySelector("#overrideAutocomplete").addEventListener("change", checkPropertiesChanged);
     document.querySelector("#overrideIncognito").addEventListener("change", checkPropertiesChanged);
+    document.querySelector("#limitToSite").addEventListener("change", checkPropertiesChanged);
     document.querySelector("#retainTypeSelect").addEventListener("change", checkPropertiesChanged);
     document.querySelector("#retainTypeSelect").addEventListener("change", retainTypeChanged);
     document.querySelector("#updateIntervalSelect").addEventListener("change", checkPropertiesChanged);
@@ -160,6 +161,7 @@ function restoreOptions() {
         prefSaveWindowProperties : false,
         prefUseCustomAutocomplete: false,
         prefSaveInIncognitoMode  : false,
+        prefLimitToSite          : false,
         prefMultilineThresholds  : {age: "10", length: "500"},
         prefRetainType           : "all",
         prefUpdateInterval       : "5000",
@@ -185,6 +187,7 @@ function applyPreferences(res, fromStore) {
     document.querySelector("#saveWindowProperties").checked = res.prefSaveWindowProperties;
     document.querySelector("#overrideAutocomplete").checked = res.prefUseCustomAutocomplete;
     document.querySelector("#overrideIncognito").checked = res.prefSaveInIncognitoMode;
+    document.querySelector("#limitToSite").checked = res.prefLimitToSite;
     document.querySelector('#versionAgeSelect').value = res.prefMultilineThresholds.age;
     document.querySelector('#versionLengthSelect').value = res.prefMultilineThresholds.length;
     document.querySelector('#retainTypeSelect').value = res.prefRetainType;
@@ -229,6 +232,7 @@ function saveOptions(e) {
         saveWindowPropertiesChanged: (currentOptions.prefSaveWindowProperties !== newOptions.prefSaveWindowProperties),
         overrideAutocompleteChanged: (currentOptions.prefUseCustomAutocomplete !== newOptions.prefUseCustomAutocomplete),
         overrideIncognitoChanged:    (currentOptions.prefSaveInIncognitoMode !== newOptions.prefSaveInIncognitoMode),
+        limitToSiteChanged:          (currentOptions.prefLimitToSite !== newOptions.prefLimitToSite),
         multilineThresholdsChanged:  (currentOptions.prefMultilineThresholds.age !== newOptions.prefMultilineThresholds.age
                                    || currentOptions.prefMultilineThresholds.length !== newOptions.prefMultilineThresholds.length),
         retainTypeChanged:           (currentOptions.prefRetainType !== newOptions.prefRetainType),
@@ -265,6 +269,7 @@ function getNewOptions() {
         prefSaveWindowProperties : document.querySelector("#saveWindowProperties").checked,
         prefUseCustomAutocomplete: document.querySelector("#overrideAutocomplete").checked,
         prefSaveInIncognitoMode  : document.querySelector("#overrideIncognito").checked,
+        prefLimitToSite          : document.querySelector("#limitToSite").checked,
         prefMultilineThresholds  : {age   : document.querySelector("#versionAgeSelect").value,
                                     length: document.querySelector("#versionLengthSelect").value},
         prefRetainType           : document.querySelector("#retainTypeSelect").value,

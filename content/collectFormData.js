@@ -92,6 +92,11 @@ function _findMultilineFieldAndSetValueSingle(fhcEvent) {
 function _findFieldAndSetValue(fhcEvent) {
     let found = false;
 
+    // try the element that requested the value
+    if (fhcEvent.fillRequestId && fillRequestElements.has(fhcEvent.fillRequestId)) {
+        found = _ifMatchSetValue(fillRequestElements.get(fhcEvent.fillRequestId), fhcEvent);
+    }
+
     // try to find the element directly by id
     if (fhcEvent.id) {
         let elem = document.getElementById(fhcEvent.id);
@@ -211,9 +216,9 @@ function _ifMatchSetValue(node, fhcEvent) {
     //let formid = "";
     //let name = (node.name) ? node.name : ((node.id) ? node.id : "");\
 
-    let id = (node.id) ? node.id : ((node.name) ? node.name : "");
+    let id = _getFieldId(node);
     if (id === "") {
-        // node without a id or name, skip
+        // node without a id, name or label, skip
         return false;
     }
 
@@ -426,7 +431,13 @@ const FILL_FOLLOWUP_IDLE_MS = 2000;
 const FILL_FOLLOWUP_MAX_MS = 10000;
 let fillFollowupObserver = null;
 
+// the elements that requested a value, by fillRequestId
+let fillRequestCounter = 0;
+const fillRequestElements = new Map();
+
 function _fillformfields(action, targetTabId) {
+    fillRequestElements.clear();
+
     // fields already requested during this fill action
     const requested = new WeakSet();
     const request = (elem, textOrState) => {
@@ -500,12 +511,12 @@ function _requestHistoricValue(node, action, targetTabId, textOrState) {
     let location = node.ownerDocument.location;
     let pagetitle = node.ownerDocument.title;
     let formid = _getFormId(node);
-    let id = _getId(node);
+    let id = _getFieldId(node);
 
     //let name = (node.name) ? node.name : ((node.id) ? node.id : "");
     let name;
     if (textOrState === "text") {
-        name  = (node.name) ? node.name : ((node.id) ? node.id : "");
+        name  = _getFieldName(node);
     } else {
         name  = (node.name) ? node.name : "";
     }
@@ -527,7 +538,7 @@ function _requestHistoricValue(node, action, targetTabId, textOrState) {
             if (node.options) {
                 Array.from(node.options).forEach( optionElem => {
                     //console.log("requesting content for select option value: " + optionElem.value + " type: " + type + "  id: " + id);
-                    let dataRetrievalEvent = _createHistoricValueRetrievalEvent(optionElem.value, nodeName, type, id, formid, location, pagetitle, textOrState, action, targetTabId);
+                    let dataRetrievalEvent = _createHistoricValueRetrievalEvent(optionElem.value, nodeName, type, id, formid, location, pagetitle, textOrState, action, targetTabId, node);
                     browser.runtime.sendMessage(dataRetrievalEvent);
                 });
                 return;
@@ -538,11 +549,13 @@ function _requestHistoricValue(node, action, targetTabId, textOrState) {
 
     //console.log("requesting formelement content for elem-id: " + id + " type: " + type + "  nodename: " + nodeName);
 
-    let dataRetrievalEvent = _createHistoricValueRetrievalEvent(name, nodeName, type, id, formid, location, pagetitle, textOrState, action, targetTabId);
+    let dataRetrievalEvent = _createHistoricValueRetrievalEvent(name, nodeName, type, id, formid, location, pagetitle, textOrState, action, targetTabId, node);
     browser.runtime.sendMessage(dataRetrievalEvent);
 }
 
-function _createHistoricValueRetrievalEvent(name, nodeName, aType, id, formid, location, pagetitle, textOrState, action, targetTabId) {
+function _createHistoricValueRetrievalEvent(name, nodeName, aType, id, formid, location, pagetitle, textOrState, action, targetTabId, node) {
+    const fillRequestId = ++fillRequestCounter;
+    fillRequestElements.set(fillRequestId, node);
     return {
         eventType:   3,
         node:        null,
@@ -557,7 +570,8 @@ function _createHistoricValueRetrievalEvent(name, nodeName, aType, id, formid, l
         value:       null,
         textOrState: textOrState,
         action:      action,
-        targetTabId: targetTabId
+        targetTabId: targetTabId,
+        fillRequestId: fillRequestId
     };
 }
 
@@ -704,7 +718,7 @@ function _getFormElementData(formField, formid, host, location, pagetitle) {
         case "color":
             elements.push({
                 node: "",
-                id: _getId(formField),
+                id: _getFieldId(formField),
                 name: (formField.name) ? formField.name : "",
                 type: formField.type,
                 selected: 1,
@@ -720,7 +734,7 @@ function _getFormElementData(formField, formid, host, location, pagetitle) {
             //console.log("field id=" + formField.id + " type=" + formField.type + " checked=" + formField.checked);
             elements.push({
                 node: "",
-                id: _getId(formField),
+                id: _getFieldId(formField),
                 name: (formField.name) ? formField.name : "",
                 type: formField.type,
                 selected: formField.checked,
@@ -743,7 +757,7 @@ function _getFormElementData(formField, formid, host, location, pagetitle) {
                     //console.log("- option id=" + option.id + " value=" + option.value + " selected=" + option.selected);
                     elements.push({
                         node: "",
-                        id: _getId(formField),
+                        id: _getFieldId(formField),
                         name: option.value,
                         type: formField.type,
                         selected: option.selected,
@@ -832,8 +846,8 @@ function _contentChangedHandler(type, node) {
     let location = node.ownerDocument.location;
     let pagetitle = node.ownerDocument.title;
     let formid = "";
-    let id = (node.id) ? node.id : ((node.name) ? node.name : "");
-    let name = (node.name) ? node.name : ((node.id) ? node.id : "");
+    let id = _getFieldId(node);
+    let name = _getFieldName(node);
     switch(type) {
         case "textarea":
         case "input":
@@ -918,6 +932,54 @@ function _findForm(element) {
     return null;
 }
 
+
+/**
+ * Fields without an id or name are identified by their label or placeholder prefixed with this marker
+ * (keep in sync with the background script). Values saved for such fields are only used on the same website.
+ */
+const FALLBACK_NAME_PREFIX = 'label:';
+const FALLBACK_NAME_MAXLENGTH = 60;
+
+/**
+ * Get a name for a form field without an id or name, derived from its aria-label, placeholder or label.
+ *
+ * @param  element {Element}
+ * @return {String} the prefixed name or an empty string
+ */
+function _getFallbackName(element) {
+    if (!["INPUT", "TEXTAREA", "SELECT"].includes(element.nodeName)) {
+        return "";
+    }
+    let text = element.getAttribute("aria-label") || element.getAttribute("placeholder") || "";
+    if (!text && element.hasAttribute("aria-labelledby")) {
+        text = element.getAttribute("aria-labelledby").split(/\s+/)
+            .map(labelId => element.ownerDocument.getElementById(labelId))
+            .filter(labelElem => labelElem)
+            .map(labelElem => labelElem.textContent)
+            .join(" ");
+    }
+    if (!text && element.labels && element.labels.length > 0) {
+        text = element.labels[0].textContent;
+    }
+    text = text.replace(/\s+/g, " ").trim().substring(0, FALLBACK_NAME_MAXLENGTH);
+    return (text) ? FALLBACK_NAME_PREFIX + text : "";
+}
+
+/**
+ * Get the name of a form field, if name not present return the id, if neither is present return a name
+ * derived from its label or an empty string.
+ */
+function _getFieldName(element) {
+    return element.name || element.id || _getFallbackName(element);
+}
+
+/**
+ * Get the id of a form field, if id not present return the name, if neither is present return a name
+ * derived from its label or an empty string.
+ */
+function _getFieldId(element) {
+    return element.id || element.name || _getFallbackName(element);
+}
 
 /**
  * Get the id of a HTML element, if id not present return the name.

@@ -73,7 +73,8 @@ class OptionsUtil {
                 prefDomainList  : [],
                 prefFieldList   : [],
                 prefRetainType  : 'all',
-                prefSaveInIncognitoMode: false
+                prefSaveInIncognitoMode: false,
+                prefLimitToSite : false
             }).then(
                 result => {
                     resolve(result);

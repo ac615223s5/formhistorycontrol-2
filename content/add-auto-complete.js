@@ -65,12 +65,13 @@ function addAutocomplete(event) {
 }
 
 function getSuggestions(term, element, suggest) {
-    const fieldname = (element.name) ? element.name : ((element.id) ? element.id : "");
+    const fieldname = _getFieldName(element);
     // console.log('getting suggestions for field ' + fieldname + ' matching search term: ' + term);
     browser.runtime.sendMessage({
         eventType: 555,
         searchTerm: term,
-        fieldName: fieldname
+        fieldName: fieldname,
+        host: _getHost(element.ownerDocument.location)
     }).then( message => {
         // console.log(`getSuggestions::responseMessage, received: ${message.choices.length} choices`);
         if (message.choices) {

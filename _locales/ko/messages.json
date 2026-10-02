@@ -487,6 +487,10 @@
     "message": "사생활 보호 모드에서 폼 기록 저장",
     "description": "Options window, Save formhistory when running in a private browsing tab"
   },
+  "optionsLimitToSite": {
+    "message": "저장된 텍스트를 입력한 웹사이트에서만 사용",
+    "description": "Options window, only use saved text on the website where it was entered"
+  },
   "optionsRetainFieldTypes": {
     "message": "기록을 유지할 필드 종류",
     "description": "Options window, Retain which type of field"

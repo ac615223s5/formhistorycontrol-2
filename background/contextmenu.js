@@ -54,7 +54,7 @@ function receiveContextEvents(fhcEvent, sender, sendResponse) {
             lastusedItemsArray.forEach(item => {EDITOR_FIELDS_MENUITEM_IDS.push(item);});
         }).then(() => {
             if (nodeName === 'input') {
-                return getTextFieldsByLastused(10);
+                return getTextFieldsByLastused(hostname, 10);
             }
             return [];
         }).then(lastusedTextItemsArray => {
@@ -307,9 +307,11 @@ function getEditorFieldsByLastused(hostname, maxItems, excludeItems) {
     });
 }
 
-function getTextFieldsByLastused(maxItems) {
+function getTextFieldsByLastused(hostname, maxItems) {
     return new Promise((resolve, reject) => {
         let result = [];
+        // the same value may be stored for multiple hosts, only list it once
+        let values = new Set();
 
         let objStore = getObjectStore(DbConst.DB_STORE_TEXT, "readonly");
         let index = objStore.index(DbConst.DB_TEXT_IDX_LAST);
@@ -321,9 +323,10 @@ function getTextFieldsByLastused(maxItems) {
                 let primaryKey = cursor.primaryKey;
                 // console.log("Entry most recent [" + cursor.key + "] primaryKey:[" + primaryKey + "] name:[" + fhcEntry.name + "] type:[" + fhcEntry.type + "}");
 
-                if (fhcEntry.type == 'input') {
+                if (fhcEntry.type == 'input' && (fhcEntry.host === hostname || !isLimitedToSite(fhcEntry.name))) {
                     let value = removeTagsAndShorten(fhcEntry.value);
-                    if (value) {
+                    if (value && !values.has(value)) {
+                        values.add(value);
                         let item = {
                             type: 'txt_lastused',
                             pKey: primaryKey,

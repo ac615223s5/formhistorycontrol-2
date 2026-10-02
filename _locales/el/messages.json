@@ -487,6 +487,10 @@
     "message": "Αποθήκευση ιστορικού φόρμας σε λειτουργία ιδιωτικής πλοήγησης",
     "description": "Options window, Save formhistory when running in a private browsing tab"
   },
+  "optionsLimitToSite": {
+    "message": "Χρήση αποθηκευμένου κειμένου μόνο στον ιστότοπο όπου καταχωρήθηκε",
+    "description": "Options window, only use saved text on the website where it was entered"
+  },
   "optionsRetainFieldTypes": {
     "message": "Διατήρηση τύπου πεδίου",
     "description": "Options window, Retain which type of field"
