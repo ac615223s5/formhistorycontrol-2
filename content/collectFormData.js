@@ -421,30 +421,76 @@ function _removeAllStyles(node, includeTransition) {
 // fill formfields request handling methods
 //----------------------------------------------------------------------------
 
+// how long to keep watching for fields that appear or become enabled as a result of filling other fields
+const FILL_FOLLOWUP_IDLE_MS = 2000;
+const FILL_FOLLOWUP_MAX_MS = 10000;
+let fillFollowupObserver = null;
+
 function _fillformfields(action, targetTabId) {
+    // fields already requested during this fill action
+    const requested = new WeakSet();
+    const request = (elem, textOrState) => {
+        if (requested.has(elem) || elem.disabled) return;
+        requested.add(elem);
+        _requestHistoricValue(elem, action, targetTabId, textOrState);
+    };
+
+    _fillformfieldsPass(request);
+
+    // Filling a field may enable or reveal other fields (e.g. a checkbox that is disabled until a name
+    // has been entered), keep watching the page for a short while and fill those fields as well.
+    if (fillFollowupObserver) {
+        fillFollowupObserver.disconnect();
+    }
+    let passTimer = null, idleTimer = null;
+    const observer = new MutationObserver(() => {
+        clearTimeout(passTimer);
+        passTimer = setTimeout(() => _fillformfieldsPass(request), 100);
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(stop, FILL_FOLLOWUP_IDLE_MS);
+    });
+    const maxTimer = setTimeout(stop, FILL_FOLLOWUP_MAX_MS);
+    function stop() {
+        observer.disconnect();
+        clearTimeout(passTimer);
+        clearTimeout(idleTimer);
+        clearTimeout(maxTimer);
+        if (fillFollowupObserver === observer) fillFollowupObserver = null;
+    }
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'style', 'class', 'hidden']
+    });
+    idleTimer = setTimeout(stop, FILL_FOLLOWUP_IDLE_MS);
+    fillFollowupObserver = observer;
+}
+
+function _fillformfieldsPass(request) {
     document.querySelectorAll("input,textarea").forEach( (elem) => {
         // text types
         if (_isTextInputSubtype(elem.type) && _isDisplayed(elem)) {
-            _requestHistoricValue(elem, action, targetTabId, "text");
+            request(elem, "text");
         }
     });
 
     document.querySelectorAll("input,textarea").forEach( (elem) => {
         // form element (state) types
         if (_isFormElementInputSubtype(elem.type) && _isDisplayed(elem)) {
-            _requestHistoricValue(elem, action, targetTabId, "state");
+            request(elem, "state");
         }
     });
 
     document.querySelectorAll("html,div,iframe,body").forEach( (elem) => {
         if ((_isContentEditable(elem) && _isDisplayed(elem)) || _isDesignModeOn(elem)) {
-            _requestHistoricValue(elem, action, targetTabId, "text");
+            request(elem, "text");
         }
     });
 
     document.querySelectorAll("select,select-multiple,select-one").forEach( (elem) => {
         if (_isDisplayed(elem)) {
-            _requestHistoricValue(elem, action, targetTabId, "state");
+            request(elem, "state");
         }
     });
 }
