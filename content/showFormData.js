@@ -76,10 +76,11 @@ function getCurrentFields(aDocument, aFields) {
 
 function showformfields() {
     let ii = 0, id, div;
-    document.querySelectorAll("input,textarea").forEach( (elem) => {
+    document.querySelectorAll("input,textarea,select").forEach( (elem) => {
         //console.log("adding info for elem-id: " + elem.id);
 
-        if (_isTextInputSubtype(elem.type) && _isDisplayed(elem)) {
+        let isStateElem = _isFormElementInputSubtype(elem.type) || "SELECT" === elem.nodeName;
+        if ((_isTextInputSubtype(elem.type) || isStateElem) && _isDisplayed(elem)) {
             id = 'fhcFldInfo' + ++ii;
 
             // toggle info

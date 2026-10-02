@@ -299,7 +299,8 @@ function _ifMatchSetValue(node, fhcEvent) {
                     // only check a radiobutton, never uncheck
                     //console.log("###### setting " + node.type + " id:" + fhcEvent.id);
                     if (!(node.type === "radio" && !fhcEvent.selected)) {
-                        node.checked = fhcEvent.selected;
+                        // click instead of setting checked so page scripts (e.g. React) notice the change
+                        node.click();
                     }
                 } else {
                     //console.log("###### skipping " + node.type + "(same state) id:" + fhcEvent.id);
@@ -591,69 +592,9 @@ function onFormSubmit(event) {
         let formFormid = _getId(form);
         let formHost = _getHost(location);
 
-        let formField, allFormElements = [];
+        let allFormElements = [];
         for (let i=0; i<formElements.length; i++) {
-            formField = formElements[i];
-            //console.log("###field id=" + _getId(formField) + " type=" + formField.type);
-            switch(formField.type){
-                case "number":
-                case "range":
-                case "color":
-                    allFormElements.push({
-                        node: "",
-                        id: _getId(formField),
-                        name: (formField.name) ? formField.name : "",
-                        type: formField.type,
-                        selected: 1,
-                        value: formField.value,
-                        formid: formFormid,
-                        host: formHost,
-                        url: location.href,
-                        pagetitle: pagetitle
-                    });
-                    break;
-                case "radio":
-                case "checkbox":
-                    //console.log("field id=" + formField.id + " type=" + formField.type + " checked=" + formField.checked);
-                    allFormElements.push({
-                        node: "",
-                        id: _getId(formField),
-                        name: (formField.name) ? formField.name : "",
-                        type: formField.type,
-                        selected: formField.checked,
-                        value: null,
-                        formid: formFormid,
-                        host: formHost,
-                        url: location.href,
-                        pagetitle: pagetitle
-                    });
-                    break;
-                case "select":
-                case "select-multiple":
-                case "select-one":
-                    //console.log("select field:");
-                    if (formField.options) {
-                        let option;
-                        for (let j=0; j<formField.options.length; j++) {
-                            option = formField.options[j];
-                            // option may contain attribute label and/or value, if both missing use the text-content
-                            //console.log("- option id=" + option.id + " value=" + option.value + " selected=" + option.selected);
-                            allFormElements.push({
-                                node: "",
-                                id: _getId(formField),
-                                name: option.value,
-                                type: formField.type,
-                                selected: option.selected,
-                                value: null,
-                                formid: formFormid,
-                                host: formHost,
-                                url: location.href,
-                                pagetitle: pagetitle
-                            });
-                        }
-                    }
-                    break;
-            }
+            allFormElements.push(..._getFormElementData(formElements[i], formFormid, formHost, location, pagetitle));
         }
 
         _processFormElementEvent({
@@ -664,6 +605,113 @@ function onFormSubmit(event) {
         });
     }
     //console.log("collectFormData::onFormSubmit done.");
+}
+
+/**
+ * Save the state of a non-text form element (checkbox, radio, select, etc.) as soon as it changes.
+ * Many sites (single page apps) never submit a form, so waiting for a submit event would never save anything.
+ */
+function onFormElementChanged(event) {
+    let t = event.target;
+    if (!t || !t.ownerDocument) return;
+
+    let n = t.nodeName.toLowerCase();
+    if (!(("input" === n && _isFormElementInputSubtype(t.type)) || "select" === n)) return;
+
+    let location = t.ownerDocument.location;
+    let pagetitle = t.ownerDocument.title;
+    let formid = _getFormId(t);
+    let host = _getHost(location);
+
+    // checking a radiobutton silently unchecks the others in the group, save the state of the whole group
+    let changedFields = [t];
+    if ("radio" === t.type && t.name) {
+        let candidates = (t.form) ? Array.from(t.form.elements) : Array.from(t.ownerDocument.querySelectorAll('input[type="radio"]'));
+        changedFields = candidates.filter(elem => "radio" === elem.type && elem.name === t.name && elem.form === t.form);
+    }
+
+    let allFormElements = [];
+    changedFields.forEach(field => {
+        allFormElements.push(..._getFormElementData(field, formid, host, location, pagetitle));
+    });
+
+    if (allFormElements.length > 0) {
+        _processFormElementEvent({
+            eventType: 2,
+            host: host,
+            incognito: browser.extension.inIncognitoContext,
+            formElements: allFormElements
+        });
+    }
+}
+
+/**
+ * Get the state of a non-text form element as an array of objects suitable for storage.
+ * Select elements yield an entry for each option, other types a single entry, text types none.
+ */
+function _getFormElementData(formField, formid, host, location, pagetitle) {
+    let elements = [];
+    //console.log("###field id=" + _getId(formField) + " type=" + formField.type);
+    switch(formField.type){
+        case "number":
+        case "range":
+        case "color":
+            elements.push({
+                node: "",
+                id: _getId(formField),
+                name: (formField.name) ? formField.name : "",
+                type: formField.type,
+                selected: 1,
+                value: formField.value,
+                formid: formid,
+                host: host,
+                url: location.href,
+                pagetitle: pagetitle
+            });
+            break;
+        case "radio":
+        case "checkbox":
+            //console.log("field id=" + formField.id + " type=" + formField.type + " checked=" + formField.checked);
+            elements.push({
+                node: "",
+                id: _getId(formField),
+                name: (formField.name) ? formField.name : "",
+                type: formField.type,
+                selected: formField.checked,
+                value: null,
+                formid: formid,
+                host: host,
+                url: location.href,
+                pagetitle: pagetitle
+            });
+            break;
+        case "select":
+        case "select-multiple":
+        case "select-one":
+            //console.log("select field:");
+            if (formField.options) {
+                let option;
+                for (let j=0; j<formField.options.length; j++) {
+                    option = formField.options[j];
+                    // option may contain attribute label and/or value, if both missing use the text-content
+                    //console.log("- option id=" + option.id + " value=" + option.value + " selected=" + option.selected);
+                    elements.push({
+                        node: "",
+                        id: _getId(formField),
+                        name: option.value,
+                        type: formField.type,
+                        selected: option.selected,
+                        value: null,
+                        formid: formid,
+                        host: host,
+                        url: location.href,
+                        pagetitle: pagetitle
+                    });
+                }
+            }
+            break;
+    }
+    return elements;
 }
 
 /**
@@ -1157,6 +1205,8 @@ function addAllHandlers(aDocument) {
 
         aDocument.querySelector("html").addEventListener("keyup", onContentChanged);
         addHandler(aDocument, "form", "submit", onFormSubmit);
+        // listen at document level (capture) so dynamically added and formless elements are covered as well
+        aDocument.addEventListener("change", onFormElementChanged, true);
         addHandler(aDocument, "input", "change", onContentChanged);
         addHandler(aDocument, "input,textarea", "paste", onContentChanged);
         addBodyObserver(aDocument);
