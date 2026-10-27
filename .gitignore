@@ -1,0 +1,5 @@
+# build output of .script/build_extension.py
+.dist/
+
+# Playwright MCP snapshots and logs
+.playwright-mcp/
